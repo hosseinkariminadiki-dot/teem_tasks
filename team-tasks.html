@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#15232B">
+<title>تقسیم کار تیم</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F2F5F4;--ink:#15232B;--muted:#5E6F76;--line:#D3DCDD;--teal:#1F7A6D;--teal-soft:#D5EBE7;--sun:#E8A33D;--sun-soft:#FBEBCF;--brick:#B4452F}
+*{box-sizing:border-box;margin:0}
+body{font-family:Vazirmatn,Tahoma,system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.8;padding-bottom:92px}
+header{padding:22px 16px 6px;max-width:640px;margin:0 auto}
+h1{font-size:24px;font-weight:800}
+header p{color:var(--muted);font-size:14px}
+main{padding:0 16px 24px;max-width:640px;margin:0 auto}
+h2{font-size:18px;font-weight:800;margin:18px 0 4px}
+.muted{color:var(--muted);font-size:14px}
+.bad-t{color:var(--brick);font-size:14px;font-weight:600}
+.empty{color:var(--muted);padding:14px 0}
+.row{padding:14px 0;border-bottom:1px solid var(--line)}
+.top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.acts{display:flex;gap:16px;margin-top:4px}
+.tag{display:inline-block;background:var(--teal-soft);color:#14554C;border-radius:4px;padding:0 8px;font-size:13px;margin:3px 0 3px 6px}
+.tag.sun{background:var(--sun-soft);color:#7A4E07}
+.tag.warn{background:#F6DDD7;color:#7E2C1C}
+.tag .x{background:none;border:0;color:inherit;font-size:16px;cursor:pointer;padding:0 2px 0 0}
+label{display:block;font-size:14px;color:var(--muted);margin-top:12px}
+input,select{display:block;font:inherit;width:100%;padding:10px 12px;margin-top:4px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}
+input[type=range]{padding:0;border:0;background:none;accent-color:var(--teal)}
+.form{margin-top:22px;padding-top:6px;border-top:2px solid var(--ink)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.inline{display:flex;gap:8px;align-items:flex-end}
+.inline>*{margin-top:0}
+.btn{background:var(--teal);color:#fff;border:0;border-radius:6px;padding:11px 18px;font:inherit;font-weight:600;cursor:pointer;margin-top:14px}
+.btn.ghost{background:none;color:var(--teal);border:1px solid var(--teal)}
+.btn.big{width:100%;padding:14px;font-size:17px}
+.link{background:none;border:0;color:var(--teal);font:inherit;font-size:14px;cursor:pointer;padding:0}
+.link.bad{color:var(--brick)}
+.bar{display:flex;height:12px;border-radius:3px;overflow:hidden;background:#E3E9EA;margin:6px 0 2px}
+.bar i{display:block;height:100%}
+.bar .l{background:#8FA1A7}.bar .a{background:var(--teal)}.bar .o{background:var(--brick)}
+.legend{display:flex;gap:14px;font-size:13px;color:var(--muted);margin:6px 0 0;flex-wrap:wrap}
+.legend b{display:inline-block;width:10px;height:10px;border-radius:2px;margin-inline-end:5px}
+.scale{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+nav{position:fixed;bottom:0;inset-inline:0;background:var(--ink);display:flex;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;background:none;border:0;color:#9DB0B6;padding:15px 4px;font:inherit;font-size:15px;cursor:pointer}
+nav button[aria-selected=true]{color:#fff;font-weight:800;box-shadow:inset 0 3px 0 var(--sun)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--sun);outline-offset:2px}
+.toast{position:fixed;bottom:84px;inset-inline:0;margin:auto;width:max-content;background:var(--ink);color:#fff;padding:8px 18px;border-radius:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>تقسیم کار تیم</h1>
+  <p>اعضا و کارها رو وارد کن تا کارها منصفانه بین افراد تقسیم بشن.</p>
+</header>
+<main id="app"></main>
+<nav role="tablist" id="nav"></nav>
+
+<script>
+const KEY = 'team-tasks-v1';
+const mem = {};
+const store = {
+  get(){ try { return localStorage.getItem(KEY); } catch (e) { return mem[KEY] || null; } },
+  set(v){ try { localStorage.setItem(KEY, v); } catch (e) { mem[KEY] = v; } }
+};
+let S = null;
+try { S = JSON.parse(store.get()); } catch (e) {}
+if (!S || !S.members) S = { members: [], tasks: [], growth: 40, result: null };
+const save = () => store.set(JSON.stringify(S));
+const uid = () => Math.random().toString(36).slice(2, 9);
+const fa = n => Number(n).toLocaleString('fa-IR');
+const LV = { 1: 'مبتدی', 2: 'متوسط', 3: 'مسلط' };
+const PR = { 1: 'کم', 2: 'متوسط', 3: 'زیاد' };
+const newM = () => ({ id: null, name: '', hours: 10, load: 0, skills: [], interests: '' });
+const newT = () => ({ title: '', skill: '', hours: 2, priority: 2 });
+let tab = 'members', dm = newM(), dt = newT();
+
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const k in (attrs || {})) {
+    const v = attrs[k];
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat()) {
+    if (c == null || c === false) continue;
+    e.append(c.nodeType ? c : document.createTextNode(c));
+  }
+  return e;
+}
+function toast(t) {
+  const e = h('div', { class: 'toast' }, t);
+  document.body.append(e);
+  setTimeout(() => e.remove(), 1800);
+}
+const parseList = s => s.split(/[,،]/).map(x => x.trim()).filter(Boolean);
+
+/* ---------- اعضا ---------- */
+function viewMembers() {
+  const box = h('div');
+  box.append(h('h2', {}, 'اعضای تیم'));
+  if (!S.members.length) {
+    box.append(h('p', { class: 'empty' }, 'هنوز عضوی اضافه نشده. از فرم پایین شروع کن، یا اول با داده نمونه امتحانش کن.'));
+    box.append(h('button', { class: 'btn ghost', onclick: loadSample }, 'امتحان با داده نمونه'));
+  }
+  S.members.forEach(m => {
+    box.append(h('div', { class: 'row' },
+      h('div', { class: 'top' },
+        h('b', {}, m.name),
+        h('span', { class: 'muted' }, `${fa(Math.max(0, m.hours - m.load))} ساعت آزاد از ${fa(m.hours)}`)),
+      h('div', {},
+        m.skills.map(s => h('span', { class: 'tag' }, `${s.name} (${LV[s.level]})`)),
+        m.interests.map(i => h('span', { class: 'tag sun' }, 'علاقه: ' + i))),
+      h('div', { class: 'acts' },
+        h('button', { class: 'link', onclick: () => {
+          dm = { ...m, skills: m.skills.map(s => ({ ...s })), interests: m.interests.join('، ') };
+          render(); window.scrollTo(0, document.body.scrollHeight);
+        } }, 'ویرایش'),
+        h('button', { class: 'link bad', onclick: () => {
+          if (confirm('این عضو حذف بشه؟')) {
+            S.members = S.members.filter(x => x.id !== m.id);
+            S.result = null; save(); render();
+          }
+        } }, 'حذف'))
+    ));
+  });
+  box.append(memberForm());
+  return box;
+}
+function memberForm() {
+  const d = dm;
+  const name = h('input', { placeholder: 'مثلاً سارا', oninput: e => d.name = e.target.value }); name.value = d.name;
+  const hours = h('input', { type: 'number', min: 0, inputmode: 'numeric', oninput: e => d.hours = +e.target.value || 0 }); hours.value = d.hours;
+  const load = h('input', { type: 'number', min: 0, inputmode: 'numeric', oninput: e => d.load = +e.target.value || 0 }); load.value = d.load;
+  const intr = h('input', { placeholder: 'مثلاً طراحی، نوشتن', oninput: e => d.interests = e.target.value }); intr.value = d.interests;
+  const skName = h('input', { placeholder: 'مثلاً طراحی' });
+  const skLv = h('select', {}, [1, 2, 3].map(v => h('option', { value: v }, LV[v]))); skLv.value = 2;
+  const pushSkill = () => {
+    const n = skName.value.trim(); if (!n) return false;
+    d.skills = d.skills.filter(s => s.name !== n);
+    d.skills.push({ name: n, level: +skLv.value }); return true;
+  };
+  const chips = h('div', {}, d.skills.map((s, i) =>
+    h('span', { class: 'tag' }, `${s.name} (${LV[s.level]})`,
+      h('button', { class: 'x', 'aria-label': 'حذف مهارت', onclick: () => { d.skills.splice(i, 1); render(); } }, '×'))));
+  return h('div', { class: 'form' },
+    h('h2', {}, d.id ? 'ویرایش عضو' : 'افزودن عضو'),
+    h('label', {}, 'نام', name),
+    h('div', { class: 'grid2' },
+      h('label', {}, 'ساعت در دسترس در هفته', hours),
+      h('label', {}, 'ساعت کاری که الان دارد', load)),
+    h('label', {}, 'مهارت‌ها'),
+    chips,
+    h('div', { class: 'inline' },
+      h('div', { style: 'flex:2' }, skName),
+      h('div', { style: 'flex:1' }, skLv),
+      h('button', { class: 'btn ghost', style: 'margin:0', onclick: () => { if (pushSkill()) render(); } }, 'افزودن')),
+    h('label', {}, 'علاقه‌ها (با ویرگول جدا کن)', intr),
+    h('button', { class: 'btn', onclick: () => {
+      if (!d.name.trim()) { toast('اسم عضو رو بنویس'); return; }
+      pushSkill();
+      const m = { id: d.id || uid(), name: d.name.trim(), hours: d.hours, load: d.load, skills: d.skills, interests: parseList(d.interests) };
+      const i = S.members.findIndex(x => x.id === m.id);
+      if (i >= 0) S.members[i] = m; else S.members.push(m);
+      dm = newM(); S.result = null; save(); render(); toast('ذخیره شد');
+    } }, d.id ? 'ذخیره تغییرات' : 'افزودن عضو'),
+    d.id ? h('button', { class: 'btn ghost', style: 'margin-inline-start:8px', onclick: () => { dm = newM(); render(); } }, 'انصراف') : null
+  );
+}
+
+/* ---------- کارها ---------- */
+function viewTasks() {
+  const box = h('div');
+  box.append(h('h2', {}, 'کارها'));
+  if (!S.tasks.length) box.append(h('p', { class: 'empty' }, 'هنوز کاری اضافه نشده.'));
+  S.tasks.forEach(t => {
+    box.append(h('div', { class: 'row' },
+      h('div', { class: 'top' },
+        h('b', {}, t.title),
+        h('span', { class: 'muted' }, `${fa(t.hours)} ساعت، اولویت ${PR[t.priority]}`)),
+      t.skill ? h('span', { class: 'tag' }, 'مهارت لازم: ' + t.skill) : null,
+      h('div', { class: 'acts' },
+        h('button', { class: 'link bad', onclick: () => {
+          S.tasks = S.tasks.filter(x => x.id !== t.id); S.result = null; save(); render();
+        } }, 'حذف'))
+    ));
+  });
+  box.append(taskForm());
+  return box;
+}
+function taskForm() {
+  const d = dt;
+  const skills = [...new Set(S.members.flatMap(m => m.skills.map(s => s.name)))];
+  const title = h('input', { placeholder: 'مثلاً طراحی پوستر', oninput: e => d.title = e.target.value }); title.value = d.title;
+  const skill = h('input', { list: 'skl', placeholder: 'اختیاری', oninput: e => d.skill = e.target.value }); skill.value = d.skill;
+  const dl = h('datalist', { id: 'skl' }, skills.map(s => h('option', { value: s })));
+  const hours = h('input', { type: 'number', min: 1, inputmode: 'numeric', oninput: e => d.hours = +e.target.value || 1 }); hours.value = d.hours;
+  const pr = h('select', { onchange: e => d.priority = +e.target.value }, [1, 2, 3].map(v => h('option', { value: v }, PR[v]))); pr.value = d.priority;
+  return h('div', { class: 'form' },
+    h('h2', {}, 'افزودن کار'),
+    h('label', {}, 'عنوان کار', title),
+    h('label', {}, 'مهارت لازم', skill, dl),
+    h('div', { class: 'grid2' },
+      h('label', {}, 'ساعت لازم', hours),
+      h('label', {}, 'اولویت', pr)),
+    h('button', { class: 'btn', onclick: () => {
+      if (!d.title.trim()) { toast('عنوان کار رو بنویس'); return; }
+      S.tasks.push({ id: uid(), title: d.title.trim(), skill: d.skill.trim(), hours: d.hours, priority: d.priority });
+      dt = newT(); S.result = null; save(); render(); toast('کار اضافه شد');
+    } }, 'افزودن کار'));
+}
+
+/* ---------- تقسیم ---------- */
+function assign() {
+  const free = {};
+  S.members.forEach(m => free[m.id] = Math.max(0, m.hours - m.load));
+  const maxFree = Math.max(1, ...Object.values(free));
+  const g = S.growth / 100;
+  const tasks = [...S.tasks].sort((a, b) => b.priority - a.priority || b.hours - a.hours);
+  const map = {};
+  tasks.forEach(t => {
+    const sk = t.skill.trim();
+    let best = null;
+    S.members.forEach(m => {
+      if (free[m.id] < t.hours) return;
+      const found = sk ? m.skills.find(s => s.name === sk) : null;
+      const lv = sk ? (found ? found.level : 0) : null;
+      const interested = m.interests.some(i => i === sk || t.title.includes(i));
+      let eff, grow;
+      if (lv === null) { eff = .5; grow = .5; }
+      else { eff = lv / 3; grow = lv === 0 ? (interested ? .8 : .3) : (3 - lv) / 3; }
+      const score = .55 * ((1 - g) * eff + g * grow) + (interested ? .15 : 0) + .30 * (free[m.id] / maxFree);
+      if (!best || score > best.score) best = { m, score, lv, interested, ratio: free[m.id] / maxFree };
+    });
+    if (!best) { map[t.id] = { memberId: null, reasons: ['ظرفیت کافی نیست'] }; return; }
+    const r = [];
+    if (best.lv === 3) r.push('مهارت بالا');
+    else if (best.lv > 0 && g >= .3) r.push('فرصت رشد');
+    if (best.lv === 0) r.push(best.interested ? 'علاقه‌مند به مهارت جدید' : 'تجربه جدید');
+    else if (best.interested) r.push('مورد علاقه');
+    if (best.ratio >= .6) r.push('زمان آزاد زیاد');
+    if (!r.length) r.push('مناسب‌ترین گزینه');
+    free[best.m.id] -= t.hours;
+    map[t.id] = { memberId: best.m.id, reasons: r };
+  });
+  S.result = { order: tasks.map(t => t.id), map };
+  save();
+}
+function growthText() { return S.growth <= 20 ? 'بیشتر کارایی' : S.growth >= 70 ? 'بیشتر یادگیری' : 'متعادل'; }
+
+function viewAssign() {
+  const box = h('div');
+  box.append(h('h2', {}, 'تقسیم کار'));
+  if (!S.members.length || !S.tasks.length) {
+    box.append(h('p', { class: 'empty' }, 'اول حداقل یک عضو و یک کار اضافه کن.'));
+    return box;
+  }
+  const lab = h('b', {}, growthText());
+  const rg = h('input', { type: 'range', min: 0, max: 100, step: 10, oninput: e => { S.growth = +e.target.value; lab.textContent = growthText(); save(); } });
+  rg.value = S.growth;
+  box.append(
+    h('label', {}, 'تعادل بین کارایی و یادگیری: ', lab, rg),
+    h('div', { class: 'scale' }, h('span', {}, 'کارایی'), h('span', {}, 'یادگیری')),
+    h('p', { class: 'muted' }, 'هرچه به سمت یادگیری بره، کار بیشتر به کسی داده می‌شه که تجربه‌اش کمتره.'),
+    h('button', { class: 'btn big', onclick: () => { assign(); render(); } }, S.result ? 'تقسیم دوباره' : 'تقسیم کن')
+  );
+  if (!S.result) return box;
+
+  const asg = {}; S.members.forEach(m => asg[m.id] = 0);
+  S.result.order.forEach(id => {
+    const a = S.result.map[id], t = S.tasks.find(x => x.id === id);
+    if (a && a.memberId && t && asg[a.memberId] != null) asg[a.memberId] += t.hours;
+  });
+
+  box.append(h('h2', {}, 'نتیجه'));
+  S.result.order.forEach(id => {
+    const t = S.tasks.find(x => x.id === id), a = S.result.map[id];
+    if (!t || !a) return;
+    const sel = h('select', { onchange: e => {
+      S.result.map[id] = { memberId: e.target.value || null, reasons: ['انتخاب دستی'] }; save(); render();
+    } }, h('option', { value: '' }, 'بدون مسئول'), S.members.map(m => h('option', { value: m.id }, m.name)));
+    sel.value = a.memberId || '';
+    box.append(h('div', { class: 'row' },
+      h('div', { class: 'top' }, h('b', {}, t.title), h('span', { class: 'muted' }, `${fa(t.hours)} ساعت`)),
+      sel,
+      h('div', {}, a.reasons.map(r => h('span', { class: 'tag' + (a.memberId ? '' : ' warn') }, r)))));
+  });
+
+  box.append(h('h2', {}, 'بار کاری هر نفر'),
+    h('div', { class: 'legend' },
+      h('span', {}, h('b', { style: 'background:#8FA1A7' }), 'کار فعلی'),
+      h('span', {}, h('b', { style: 'background:var(--teal)' }), 'کار جدید'),
+      h('span', {}, h('b', { style: 'background:#E3E9EA' }), 'زمان آزاد')));
+  S.members.forEach(m => {
+    const used = m.load + asg[m.id], scale = Math.max(m.hours, used, 1), over = used > m.hours;
+    box.append(h('div', { class: 'row' },
+      h('div', { class: 'top' }, h('b', {}, m.name),
+        h('span', { class: over ? 'bad-t' : 'muted' }, over ? `${fa(used - m.hours)} ساعت بیش از ظرفیت` : `${fa(asg[m.id])} ساعت کار جدید`)),
+      h('div', { class: 'bar' },
+        h('i', { class: 'l', style: `width:${m.load / scale * 100}%` }),
+        h('i', { class: over ? 'o' : 'a', style: `width:${asg[m.id] / scale * 100}%` }))));
+  });
+
+  box.append(h('button', { class: 'btn ghost big', onclick: () => {
+    const text = S.result.order.map(id => {
+      const t = S.tasks.find(x => x.id === id), a = S.result.map[id];
+      const m = S.members.find(x => x.id === a.memberId);
+      return `• ${t.title}: ${m ? m.name : 'بدون مسئول'}`;
+    }).join('\n');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => toast('کپی شد'), () => prompt('این متن رو کپی کن:', text));
+    } else prompt('این متن رو کپی کن:', text);
+  } }, 'کپی لیست برای ارسال در پیام‌رسان'));
+  return box;
+}
+
+/* ---------- نمونه و رندر ---------- */
+function loadSample() {
+  S.members = [
+    { id: uid(), name: 'سارا', hours: 10, load: 3, skills: [{ name: 'طراحی', level: 3 }, { name: 'نوشتن', level: 1 }], interests: ['نوشتن'] },
+    { id: uid(), name: 'علی', hours: 8, load: 5, skills: [{ name: 'برنامه‌نویسی', level: 3 }, { name: 'طراحی', level: 1 }], interests: ['طراحی'] },
+    { id: uid(), name: 'مریم', hours: 6, load: 1, skills: [{ name: 'نوشتن', level: 3 }], interests: [] },
+    { id: uid(), name: 'رضا', hours: 12, load: 2, skills: [], interests: ['برنامه‌نویسی'] }
+  ];
+  S.tasks = [
+    { id: uid(), title: 'طراحی لوگو', skill: 'طراحی', hours: 4, priority: 2 },
+    { id: uid(), title: 'نوشتن متن معرفی', skill: 'نوشتن', hours: 3, priority: 2 },
+    { id: uid(), title: 'راه‌اندازی سایت', skill: 'برنامه‌نویسی', hours: 6, priority: 3 },
+    { id: uid(), title: 'هماهنگی جلسه', skill: '', hours: 1, priority: 1 }
+  ];
+  S.result = null; save(); render();
+}
+const TABS = [['members', 'اعضا'], ['tasks', 'کارها'], ['assign', 'تقسیم']];
+function render() {
+  const app = document.getElementById('app');
+  app.replaceChildren(tab === 'members' ? viewMembers() : tab === 'tasks' ? viewTasks() : viewAssign());
+  document.getElementById('nav').replaceChildren(...TABS.map(([k, t]) =>
+    h('button', { role: 'tab', 'aria-selected': String(tab === k), onclick: () => { tab = k; render(); window.scrollTo(0, 0); } }, t)));
+}
+render();
+</script>
+</body>
+</html>

@@ -40,6 +40,8 @@ input[type=range]{padding:0;border:0;background:none;accent-color:var(--teal)}
 .link.bad{color:var(--brick)}
 .chk{display:flex;align-items:center;gap:8px;margin:0;color:var(--ink);font-size:14px}
 .chk input{width:20px;height:20px;margin:0;padding:0;accent-color:var(--teal)}
+.hist{margin-top:8px;padding:8px 12px;background:#E6EDEC;border-radius:6px}
+.hrow{display:flex;justify-content:space-between;gap:8px;font-size:14px;padding:3px 0}
 .row.done{opacity:.55}.row.done b{text-decoration:line-through}
 textarea{resize:vertical}
 .bar{display:flex;height:12px;border-radius:3px;overflow:hidden;background:#E3E9EA;margin:6px 0 2px}
@@ -73,12 +75,13 @@ const store = {
 let S = null;
 try { S = JSON.parse(store.get()); } catch (e) {}
 if (!S || !S.members) S = { members: [], tasks: [], growth: 40, result: null };
+if (!S.history) S.history = [];
 const save = () => store.set(JSON.stringify(S));
 const uid = () => Math.random().toString(36).slice(2, 9);
 const fa = n => Number(n).toLocaleString('fa-IR');
 const LV = { 1: 'مبتدی', 2: 'متوسط', 3: 'مسلط' };
 const PR = { 1: 'کم', 2: 'متوسط', 3: 'زیاد' };
-const newM = () => ({ id: null, name: '', hours: 10, load: 0, skills: [], interests: '' });
+const newM = () => ({ id: null, name: '', hours: 10, load: 0, skills: [], interests: '', support: false, active: false, away: false });
 const newT = () => ({ title: '', skill: '', hours: 2, priority: 2 });
 let tab = 'members', dm = newM(), dt = newT();
 
@@ -102,9 +105,39 @@ function toast(t) {
   setTimeout(() => e.remove(), 1800);
 }
 const parseList = s => s.split(/[,،]/).map(x => x.trim()).filter(Boolean);
+function setDone(t) {
+  S.history = (S.history || []).filter(e => e.tid !== t.id);
+  if (t.done && t.assignee) S.history.push({ tid: t.id, memberId: t.assignee, title: t.title, skill: t.skill, hours: t.hours, at: Date.now() });
+}
 const effLoad = m => m.load + S.tasks.filter(t => t.assignee === m.id && !t.done).reduce((a, t) => a + t.hours, 0);
 
 /* ---------- اعضا ---------- */
+let histOpen = null;
+const dateFa = ts => ts ? new Date(ts).toLocaleDateString('fa-IR') : '';
+function dropFromResult(mid, reason) {
+  if (!S.result) return;
+  S.result.order.forEach(id => {
+    const a = S.result.map[id];
+    if (a && a.memberId === mid) S.result.map[id] = { memberId: null, reasons: [reason] };
+  });
+}
+function setAway(m, v) {
+  m.away = v;
+  if (v) dropFromResult(m.id, 'در دسترس نیست');
+  save();
+  if (v && S.result) assign(true);
+  render();
+}
+function histView(list) {
+  const box = h('div', { class: 'hist' });
+  if (!list.length) { box.append(h('span', { class: 'muted' }, 'هنوز کاری برای این فرد ثبت نشده.')); return box; }
+  const month = list.filter(e => Date.now() - e.at <= WIN).reduce((a, e) => a + e.hours, 0);
+  box.append(h('div', { class: 'muted' }, `${fa(month)} ساعت کار انجام‌شده تو ۳۰ روز اخیر`));
+  list.slice(0, 10).forEach(e => box.append(h('div', { class: 'hrow' },
+    h('span', {}, e.title + (e.skill ? ' (' + e.skill + ')' : '')),
+    h('span', { class: 'muted' }, `${fa(e.hours)} ساعت، ${dateFa(e.at)}`))));
+  return box;
+}
 function viewMembers() {
   const box = h('div');
   box.append(h('h2', {}, 'اعضای تیم'));
@@ -113,11 +146,14 @@ function viewMembers() {
     box.append(h('button', { class: 'btn ghost', onclick: loadSample }, 'امتحان با داده نمونه'));
   }
   S.members.forEach(m => {
+    const hist = (S.history || []).filter(e => e.memberId === m.id).sort((a, b) => b.at - a.at);
     box.append(h('div', { class: 'row' },
       h('div', { class: 'top' },
         h('b', {}, m.name),
         h('span', { class: 'muted' }, `${fa(Math.max(0, m.hours - effLoad(m)))} ساعت آزاد از ${fa(m.hours)}`)),
       h('div', {},
+        m.support ? h('span', { class: 'tag sun' }, m.active ? 'پشتیبان (فعال)' : 'پشتیبان') : null,
+        m.away ? h('span', { class: 'tag warn' }, 'در دسترس نیست') : null,
         m.skills.map(s => h('span', { class: 'tag' }, `${s.name} (${LV[s.level]})`)),
         m.interests.map(i => h('span', { class: 'tag sun' }, 'علاقه: ' + i))),
       h('div', { class: 'acts' },
@@ -125,12 +161,16 @@ function viewMembers() {
           dm = { ...m, skills: m.skills.map(s => ({ ...s })), interests: m.interests.join('، ') };
           render(); window.scrollTo(0, document.body.scrollHeight);
         } }, 'ویرایش'),
+        h('button', { class: 'link', onclick: () => { histOpen = histOpen === m.id ? null : m.id; render(); } }, `تاریخچه (${fa(hist.length)})`),
+        h('button', { class: 'link', onclick: () => setAway(m, !m.away) }, m.away ? 'برگشت به تیم' : 'در دسترس نیست'),
         h('button', { class: 'link bad', onclick: () => {
           if (confirm('این عضو حذف بشه؟')) {
             S.members = S.members.filter(x => x.id !== m.id);
+            S.history = (S.history || []).filter(e => e.memberId !== m.id);
             S.result = null; save(); render();
           }
-        } }, 'حذف'))
+        } }, 'حذف')),
+      histOpen === m.id ? histView(hist) : null
     ));
   });
   box.append(memberForm());
@@ -142,6 +182,8 @@ function memberForm() {
   const hours = h('input', { type: 'number', min: 0, inputmode: 'numeric', oninput: e => d.hours = +e.target.value || 0 }); hours.value = d.hours;
   const load = h('input', { type: 'number', min: 0, inputmode: 'numeric', oninput: e => d.load = +e.target.value || 0 }); load.value = d.load;
   const intr = h('input', { placeholder: 'مثلاً طراحی، نوشتن', oninput: e => d.interests = e.target.value }); intr.value = d.interests;
+  const sup = h('input', { type: 'checkbox', onchange: e => d.support = e.target.checked }); sup.checked = !!d.support;
+  const away = h('input', { type: 'checkbox', onchange: e => d.away = e.target.checked }); away.checked = !!d.away;
   const skName = h('input', { placeholder: 'مثلاً طراحی' });
   const skLv = h('select', {}, [1, 2, 3].map(v => h('option', { value: v }, LV[v]))); skLv.value = 2;
   const pushSkill = () => {
@@ -165,10 +207,15 @@ function memberForm() {
       h('div', { style: 'flex:1' }, skLv),
       h('button', { class: 'btn ghost', style: 'margin:0', onclick: () => { if (pushSkill()) render(); } }, 'افزودن')),
     h('label', {}, 'علاقه‌ها (با ویرگول جدا کن)', intr),
+    h('label', { class: 'chk', style: 'margin-top:16px' }, sup, 'نیروی پشتیبان (فقط وقتی فعالش کنی تو تقسیم شرکت می‌کنه)'),
+    h('label', { class: 'chk', style: 'margin-top:10px' }, away, 'فعلاً در دسترس نیست'),
     h('button', { class: 'btn', onclick: () => {
       if (!d.name.trim()) { toast('اسم عضو رو بنویس'); return; }
       pushSkill();
-      const m = { id: d.id || uid(), name: d.name.trim(), hours: d.hours, load: d.load, skills: d.skills, interests: parseList(d.interests) };
+      const m = {
+        id: d.id || uid(), name: d.name.trim(), hours: d.hours, load: d.load, skills: d.skills,
+        interests: parseList(d.interests), support: !!d.support, active: d.support ? !!d.active : false, away: !!d.away
+      };
       const i = S.members.findIndex(x => x.id === m.id);
       if (i >= 0) S.members[i] = m; else S.members.push(m);
       dm = newM(); S.result = null; save(); render(); toast('ذخیره شد');
@@ -185,7 +232,7 @@ function viewTasks() {
   const nameOf = id => { const m = S.members.find(x => x.id === id); return m ? m.name : null; };
   const row = t => {
     const who = t.assignee ? nameOf(t.assignee) : null;
-    const cb = h('input', { type: 'checkbox', onchange: e => { t.done = e.target.checked; S.result = null; save(); render(); } });
+    const cb = h('input', { type: 'checkbox', onchange: e => { t.done = e.target.checked; setDone(t); S.result = null; save(); render(); } });
     cb.checked = !!t.done;
     return h('div', { class: 'row' + (t.done ? ' done' : '') },
       h('div', { class: 'top' },
@@ -233,17 +280,39 @@ function taskForm() {
 }
 
 /* ---------- تقسیم ---------- */
-function assign() {
+const WIN = 30 * 24 * 3600 * 1000;
+const WARN = ['ظرفیت کافی نیست', 'تکرار کار اخیر', 'در دسترس نیست', 'پشتیبان غیرفعال شد'];
+const avail = m => !m.away && (!m.support || m.active);
+const recentOf = mid => (S.history || []).filter(e => e.memberId === mid && Date.now() - e.at <= WIN);
+const sumH = list => list.reduce((a, e) => a + e.hours, 0);
+const vv = () => S.variety == null ? 40 : S.variety;
+
+function assign(keep) {
+  const av = S.members.filter(avail);
   const free = {};
-  S.members.forEach(m => free[m.id] = Math.max(0, m.hours - effLoad(m)));
-  const maxFree = Math.max(1, ...Object.values(free));
-  const g = S.growth / 100;
-  const tasks = S.tasks.filter(t => !t.assignee && !t.done).sort((a, b) => b.priority - a.priority || b.hours - a.hours);
+  av.forEach(m => free[m.id] = Math.max(0, m.hours - effLoad(m)));
+  const prev = keep ? S.result : null;
   const map = {};
-  tasks.forEach(t => {
+  let order, todo = [];
+  if (prev) {
+    order = prev.order.filter(id => S.tasks.some(t => t.id === id));
+    order.forEach(id => {
+      const a = prev.map[id], t = S.tasks.find(x => x.id === id);
+      if (a && a.memberId) { map[id] = a; if (free[a.memberId] != null) free[a.memberId] -= t.hours; }
+      else todo.push(t);
+    });
+  } else {
+    todo = S.tasks.filter(t => !t.assignee && !t.done);
+  }
+  todo.sort((a, b) => b.priority - a.priority || b.hours - a.hours);
+  if (!prev) order = todo.map(t => t.id);
+  const maxFree = Math.max(1, ...Object.values(free));
+  const maxRec = Math.max(1, ...av.map(m => sumH(recentOf(m.id))));
+  const g = S.growth / 100, v = vv() / 100;
+  todo.forEach(t => {
     const sk = t.skill.trim();
     let best = null;
-    S.members.forEach(m => {
+    av.forEach(m => {
       if (free[m.id] < t.hours) return;
       const found = sk ? m.skills.find(s => s.name === sk) : null;
       const lv = sk ? (found ? found.level : 0) : null;
@@ -251,8 +320,13 @@ function assign() {
       let eff, grow;
       if (lv === null) { eff = .5; grow = .5; }
       else { eff = lv / 3; grow = lv === 0 ? (interested ? .8 : .3) : (3 - lv) / 3; }
-      const score = .55 * ((1 - g) * eff + g * grow) + (interested ? .15 : 0) + .30 * (free[m.id] / maxFree);
-      if (!best || score > best.score) best = { m, score, lv, interested, ratio: free[m.id] / maxFree };
+      const rec = recentOf(m.id);
+      const titleRep = rec.some(e => e.title.trim() === t.title.trim());
+      const skRep = sk ? Math.min(3, rec.filter(e => e.skill === sk).length) / 3 : 0;
+      const pen = Math.max(titleRep ? 1 : 0, skRep * .7);
+      const score = .55 * ((1 - g) * eff + g * grow) + (interested ? .15 : 0) + .30 * (free[m.id] / maxFree)
+        - .6 * v * pen - .10 * (sumH(rec) / maxRec);
+      if (!best || score > best.score) best = { m, score, lv, interested, ratio: free[m.id] / maxFree, titleRep, pen, hasHist: rec.length > 0 };
     });
     if (!best) { map[t.id] = { memberId: null, reasons: ['ظرفیت کافی نیست'] }; return; }
     const r = [];
@@ -261,14 +335,17 @@ function assign() {
     if (best.lv === 0) r.push(best.interested ? 'علاقه‌مند به مهارت جدید' : 'تجربه جدید');
     else if (best.interested) r.push('مورد علاقه');
     if (best.ratio >= .6) r.push('زمان آزاد زیاد');
+    if (best.titleRep) r.push('تکرار کار اخیر');
+    else if (best.hasHist && best.pen === 0) r.push('تکراری نیست');
     if (!r.length) r.push('مناسب‌ترین گزینه');
     free[best.m.id] -= t.hours;
     map[t.id] = { memberId: best.m.id, reasons: r };
   });
-  S.result = { order: tasks.map(t => t.id), map };
+  S.result = { order, map };
   save();
 }
 function growthText() { return S.growth <= 20 ? 'بیشتر کارایی' : S.growth >= 70 ? 'بیشتر یادگیری' : 'متعادل'; }
+function varText() { return vv() <= 20 ? 'کم‌اهمیت' : vv() >= 70 ? 'خیلی مهم' : 'متوسط'; }
 
 function viewAssign() {
   const box = h('div');
@@ -283,12 +360,40 @@ function viewAssign() {
   const lab = h('b', {}, growthText());
   const rg = h('input', { type: 'range', min: 0, max: 100, step: 10, oninput: e => { S.growth = +e.target.value; lab.textContent = growthText(); save(); } });
   rg.value = S.growth;
+  const vlab = h('b', {}, varText());
+  const rv = h('input', { type: 'range', min: 0, max: 100, step: 10, oninput: e => { S.variety = +e.target.value; vlab.textContent = varText(); save(); } });
+  rv.value = vv();
   box.append(
     h('label', {}, 'تعادل بین کارایی و یادگیری: ', lab, rg),
     h('div', { class: 'scale' }, h('span', {}, 'کارایی'), h('span', {}, 'یادگیری')),
     h('p', { class: 'muted' }, 'هرچه به سمت یادگیری بره، کار بیشتر به کسی داده می‌شه که تجربه‌اش کمتره.'),
-    h('button', { class: 'btn big', onclick: () => { assign(); render(); } }, S.result ? 'تقسیم دوباره' : 'تقسیم کن')
+    h('label', {}, 'اهمیت پرهیز از کار تکراری: ', vlab, rv),
+    h('div', { class: 'scale' }, h('span', {}, 'کم'), h('span', {}, 'زیاد')),
+    h('p', { class: 'muted' }, 'کاری که یک نفر تو ۳۰ روز اخیر انجام داده، کمتر بهش داده می‌شه. هرچه این عدد بالاتر باشه، کارها بیشتر بین افراد می‌چرخه.'),
+    h('button', { class: 'btn big', onclick: () => { assign(false); render(); } }, S.result ? 'تقسیم دوباره' : 'تقسیم کن')
   );
+
+  const sups = S.members.filter(m => m.support && !m.away);
+  if (sups.length) {
+    const left = S.result ? S.result.order.filter(id => S.result.map[id] && !S.result.map[id].memberId).length : 0;
+    box.append(h('h2', {}, 'نیروهای پشتیبان'),
+      h('p', { class: left ? 'bad-t' : 'muted' }, left
+        ? `${fa(left)} کار ظرفیت نداشت. با فعال کردن پشتیبان‌ها، فقط همین کارها دوباره تقسیم می‌شن.`
+        : 'هر پشتیبانی که فعال کنی تو تقسیم شرکت می‌کنه. اگه تقسیم انجام شده باشه، فقط کارهای بدون مسئول رو می‌گیره.'));
+    sups.forEach(m => {
+      const cb = h('input', { type: 'checkbox', onchange: e => {
+        m.active = e.target.checked;
+        if (!m.active) dropFromResult(m.id, 'پشتیبان غیرفعال شد');
+        save();
+        if (S.result) assign(true);
+        render();
+      } });
+      cb.checked = !!m.active;
+      box.append(h('div', { class: 'row top' },
+        h('label', { class: 'chk' }, cb, `${m.name}: فعال`),
+        h('span', { class: 'muted' }, `${fa(Math.max(0, m.hours - effLoad(m)))} ساعت آزاد`)));
+    });
+  }
   if (!S.result) return box;
 
   const asg = {}; S.members.forEach(m => asg[m.id] = 0);
@@ -303,12 +408,13 @@ function viewAssign() {
     if (!t || !a) return;
     const sel = h('select', { onchange: e => {
       S.result.map[id] = { memberId: e.target.value || null, reasons: ['انتخاب دستی'] }; save(); render();
-    } }, h('option', { value: '' }, 'بدون مسئول'), S.members.map(m => h('option', { value: m.id }, m.name)));
+    } }, h('option', { value: '' }, 'بدون مسئول'),
+      S.members.map(m => h('option', { value: m.id }, m.name + (m.away ? ' (در دسترس نیست)' : (m.support && !m.active ? ' (پشتیبان)' : '')))));
     sel.value = a.memberId || '';
     box.append(h('div', { class: 'row' },
       h('div', { class: 'top' }, h('b', {}, t.title), h('span', { class: 'muted' }, `${fa(t.hours)} ساعت`)),
       sel,
-      h('div', {}, a.reasons.map(r => h('span', { class: 'tag' + (a.memberId ? '' : ' warn') }, r)))));
+      h('div', {}, a.reasons.map(r => h('span', { class: 'tag' + (WARN.includes(r) ? ' warn' : '') }, r)))));
   });
 
   box.append(h('h2', {}, 'بار کاری هر نفر'),
@@ -316,7 +422,7 @@ function viewAssign() {
       h('span', {}, h('b', { style: 'background:#8FA1A7' }), 'کار فعلی'),
       h('span', {}, h('b', { style: 'background:var(--teal)' }), 'کار جدید'),
       h('span', {}, h('b', { style: 'background:#E3E9EA' }), 'زمان آزاد')));
-  S.members.forEach(m => {
+  S.members.filter(m => avail(m) || asg[m.id] > 0).forEach(m => {
     const base = effLoad(m), used = base + asg[m.id], scale = Math.max(m.hours, used, 1), over = used > m.hours;
     box.append(h('div', { class: 'row' },
       h('div', { class: 'top' }, h('b', {}, m.name),
@@ -325,6 +431,8 @@ function viewAssign() {
         h('i', { class: 'l', style: `width:${base / scale * 100}%` }),
         h('i', { class: over ? 'o' : 'a', style: `width:${asg[m.id] / scale * 100}%` }))));
   });
+  const out = S.members.filter(m => !avail(m));
+  if (out.length) box.append(h('p', { class: 'muted' }, 'در تقسیم شرکت نمی‌کنن: ' + out.map(m => m.name + (m.away ? ' (در دسترس نیست)' : ' (پشتیبان)')).join('، ')));
 
   box.append(h('button', { class: 'btn big', onclick: () => {
     let n = 0;
@@ -351,7 +459,7 @@ function viewAssign() {
 /* ---------- پشتیبان ---------- */
 function viewBackup() {
   const box = h('div');
-  const data = () => JSON.stringify({ members: S.members, tasks: S.tasks, growth: S.growth }, null, 1);
+  const data = () => JSON.stringify({ members: S.members, tasks: S.tasks, growth: S.growth, variety: S.variety, history: S.history }, null, 1);
   const stamp = () => { S.lastBackup = Date.now(); save(); };
   box.append(
     h('h2', {}, 'پشتیبان‌گیری'),
@@ -375,7 +483,7 @@ function viewBackup() {
     try { d = JSON.parse(text); } catch (e) { toast('فایل معتبر نیست'); return; }
     if (!d || !Array.isArray(d.members) || !Array.isArray(d.tasks)) { toast('فایل معتبر نیست'); return; }
     if (!confirm('اطلاعات فعلی با پشتیبان جایگزین بشه؟')) return;
-    S = { members: d.members, tasks: d.tasks, growth: typeof d.growth === 'number' ? d.growth : 40, result: null, lastBackup: S.lastBackup };
+    S = { members: d.members, tasks: d.tasks, growth: typeof d.growth === 'number' ? d.growth : 40, variety: typeof d.variety === 'number' ? d.variety : 40, history: Array.isArray(d.history) ? d.history : [], result: null, lastBackup: S.lastBackup };
     save(); render(); toast('بازیابی شد');
   };
   const file = h('input', { type: 'file', accept: '.json,application/json', onchange: e => {
@@ -405,7 +513,7 @@ function loadSample() {
     { id: uid(), title: 'راه‌اندازی سایت', skill: 'برنامه‌نویسی', hours: 6, priority: 3 },
     { id: uid(), title: 'هماهنگی جلسه', skill: '', hours: 1, priority: 1 }
   ];
-  S.result = null; save(); render();
+  S.history = []; S.result = null; save(); render();
 }
 const TABS = [['members', 'اعضا'], ['tasks', 'کارها'], ['assign', 'تقسیم'], ['backup', 'پشتیبان']];
 function render() {

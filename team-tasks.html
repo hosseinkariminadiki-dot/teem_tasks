@@ -243,7 +243,7 @@ function viewTasks() {
         who ? h('span', { class: 'tag sun' }, 'مسئول: ' + who) : (t.done ? null : h('span', { class: 'tag warn' }, 'بدون مسئول'))),
       h('div', { class: 'acts' },
         h('label', { class: 'chk' }, cb, 'انجام شد'),
-        (t.assignee && !t.done) ? h('button', { class: 'link', onclick: () => { t.assignee = null; S.result = null; save(); render(); } }, 'لغو مسئول') : null,
+        (t.assignee && !t.done) ? h('button', { class: 'link', onclick: () => { t.assignee = null; S.result = null; save(); render(); toast('کار بدون مسئول شد و آماده تقسیم دوباره‌ست'); } }, 'انجام نشد') : null,
         h('button', { class: 'link bad', onclick: () => {
           S.tasks = S.tasks.filter(x => x.id !== t.id); S.result = null; save(); render();
         } }, 'حذف')));

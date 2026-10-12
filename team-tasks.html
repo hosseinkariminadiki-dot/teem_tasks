@@ -42,6 +42,9 @@ input[type=range]{padding:0;border:0;background:none;accent-color:var(--teal)}
 .chk input{width:20px;height:20px;margin:0;padding:0;accent-color:var(--teal)}
 .hist{margin-top:8px;padding:8px 12px;background:#E6EDEC;border-radius:6px}
 .hrow{display:flex;justify-content:space-between;gap:8px;font-size:14px;padding:3px 0}
+.ov{position:fixed;inset:0;background:rgba(21,35,43,.55);display:flex;align-items:flex-end;z-index:10}
+.sheet{background:var(--bg);width:100%;max-width:640px;margin:0 auto;padding:20px 16px calc(20px + env(safe-area-inset-bottom));border-radius:14px 14px 0 0}
+.sheet p{margin:2px 0 0}
 .row.done{opacity:.55}.row.done b{text-decoration:line-through}
 textarea{resize:vertical}
 .bar{display:flex;height:12px;border-radius:3px;overflow:hidden;background:#E3E9EA;margin:6px 0 2px}
@@ -106,8 +109,18 @@ function toast(t) {
 }
 const parseList = s => s.split(/[,،]/).map(x => x.trim()).filter(Boolean);
 function setDone(t) {
-  S.history = (S.history || []).filter(e => e.tid !== t.id);
-  if (t.done && t.assignee) S.history.push({ tid: t.id, memberId: t.assignee, title: t.title, skill: t.skill, hours: t.hours, at: Date.now() });
+  S.history = S.history || [];
+  if (t.done) {
+    if (t.assignee) {
+      t.doneAt = Date.now();
+      S.history.push({ tid: t.id, memberId: t.assignee, title: t.title, skill: t.skill, hours: t.hours, at: t.doneAt });
+    }
+  } else {
+    const list = S.history.filter(e => e.tid === t.id);
+    const target = t.doneAt != null ? list.find(e => e.at === t.doneAt) : list.sort((x, y) => y.at - x.at)[0];
+    if (target) S.history = S.history.filter(e => e !== target);
+    t.doneAt = null;
+  }
 }
 const effLoad = m => m.load + S.tasks.filter(t => t.assignee === m.id && !t.done).reduce((a, t) => a + t.hours, 0);
 
@@ -225,6 +238,21 @@ function memberForm() {
 }
 
 /* ---------- کارها ---------- */
+function keepForNext(t) {
+  t.done = false; t.assignee = null; t.doneAt = null;
+  S.result = null; save(); render();
+  toast('کار ثبت شد و دوباره برای تقسیم آماده‌ست');
+}
+function askKeep(t) {
+  const close = () => ov.remove();
+  const ov = h('div', { class: 'ov', onclick: close },
+    h('div', { class: 'sheet', onclick: e => e.stopPropagation() },
+      h('b', {}, `«${t.title}» انجام شد.`),
+      h('p', { class: 'muted' }, 'این کار دوباره برای تقسیم نگه داشته بشه؟'),
+      h('button', { class: 'btn big', onclick: () => { close(); keepForNext(t); } }, 'بله، دوباره برای تقسیم بمونه'),
+      h('button', { class: 'btn ghost big', onclick: close }, 'نه، فقط بسته بشه')));
+  document.body.append(ov);
+}
 function viewTasks() {
   const box = h('div');
   box.append(h('h2', {}, 'کارها'));
@@ -232,7 +260,7 @@ function viewTasks() {
   const nameOf = id => { const m = S.members.find(x => x.id === id); return m ? m.name : null; };
   const row = t => {
     const who = t.assignee ? nameOf(t.assignee) : null;
-    const cb = h('input', { type: 'checkbox', onchange: e => { t.done = e.target.checked; setDone(t); S.result = null; save(); render(); } });
+    const cb = h('input', { type: 'checkbox', onchange: e => { t.done = e.target.checked; setDone(t); S.result = null; save(); render(); if (t.done) askKeep(t); } });
     cb.checked = !!t.done;
     return h('div', { class: 'row' + (t.done ? ' done' : '') },
       h('div', { class: 'top' },
